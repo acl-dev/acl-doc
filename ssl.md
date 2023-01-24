@@ -1,4 +1,14 @@
-# 一、概述
+---
+title: 使用SSL中对数据进行加密传输
+date: 2020-01-15 13:08:24
+tags: SSL编程
+categories: SSL编程
+---
+
+# 使用SSL中对数据进行加密传输
+
+## 一、概述  
+
 在 Acl 的网络通信模块中，为了支持安全网络传输，引入了第三方 SSL 库，当前支持 Polarssl 及其升级版 MbedTLS，Acl 库中通过抽象与封装，大大简化了 SSL 的使用过程（现在开源的 SSL 库使用确实太复杂了），以下是在 Acl 库中使用 SSL 的特点：  
 - 为了不给不使用 SSL 功能的用户造成编译上的障碍，Acl 库采用动态加载 SSL 动态库方式，这样在连接时就不必提供 SSL 库（当然，通过设置编译开关，也允许用户采用静态连接 SSL 库的方式）；  
 - 在 Acl 的工程中，仅包含了指定版本的 Polarssl/Mbedtls 头文件（在 acl/include/ 目录下），这些头文件在编译 Acl 的 SSL 模块时会使用到，且不对外暴露，因此使用者需要自行提供对应版本的 SSL 动态二进制库（SSL库的源代码可以去官方 https://tls.mbed.org/ 下载，或者去 https://github.com/acl-dev/third_party 处下载）；
@@ -12,10 +22,10 @@
   2. Mbedtls 库编译后生成了三个库文件：libmbedcrypto/libmbedx509/libmbedtls，而原来 Polarssl 只生成一个库文件，所以为了用户使用方便，修改了 libray/CMakeLists.txt 文件，可以将这三个库文件合并成一个；
   3. 增加了 visualc/VC2012（而官方仅提供了 VS2010），这样在 Windows 平台下可以使用 VS 2012 来编译生成 mbedtls 库。
  
-# 二、API 接口说明
+## 二、API 接口说明
 为了支持更加通用的 SSL 接口，在 Acl SSL 模块中定义了两个基础类：`sslbase_conf` 和 `sslbase_io`，其中 `ssbase_conf` 类对象可以用做全局单一实例，`ssbase_io` 类对象用来给每一个 TCP socket 对象提供安全 IO 通信功能。
 
-## 2.1、sslbase_conf 类
+### 2.1、sslbase_conf 类
 在 ssbase_conf 类中定义了纯虚方法：`open`，用来创建 SSL IO 通信类对象，在当前所支持 Polarssl 和 MbedTSL 中的配置类中（分别为：`acl::polarssl_conf` 和 `acl::mbedtls_conf`）均实现了该方法。下面是 `open` 方法的具体说明：
 ```c
 /**
@@ -68,7 +78,7 @@ virtual bool set_key(const char* key_file, const char* key_pass = NULL)；
 virtual void enable_cache(bool on)；
 ```
 
-## 2.2、sslbase_io 类
+### 2.2、sslbase_io 类
 `acl::sslbase_io` 类对象与每一个 TCP 连接对象 `acl::socket_stream` 进行绑定，使 `acl::socket_stream` 具备了进行 SSL 安全传输的能力，在 `acl::sslbase_io`类中声明了纯虚方法`handshake`，这使之成为纯虚类；另外，`acl::sslbase_io` 虽然继承于`acl::stream_hook`类，但并没有实现 `acl::stream_hook` 中规定的四个纯虚方法：`open`，`on_close`，`read`，`send`，这几个虚方法也需要 `acl::sslbase_io`的子类来实现，目前`acl::sslbase_io`有两个子类`acl::polarssl_io`及`acl::mbedtls_io` 分别用来支持 Polarssl 及 MbedTLS。
 下面是这几个纯虚方法的声明：
 ```c
@@ -119,8 +129,8 @@ virtual void destroy(void) {}
 ```
 以上几个虚方法均可以在 `acl::polarssl_io` 及 `acl::mbedtls_io` 中看到被实现。
 
-# 三、编程示例
-## 2.1、服务器模式（使用 MbedTLS）
+## 三、编程示例
+### 2.1、服务器模式（使用 MbedTLS）
 首先给出一个完整的支持 SSL 的服务端例子，该例子使用了 MbedTLS 做为 SSL 库，如果想切换成 Polarssl 也非常简单，方法类似（该示例位置：https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/server）：
 ```c
 #include <assert.h>
@@ -315,7 +325,7 @@ int main(int argc, char* argv[]) {
   - 在客户端处理线程中，调用 `echo_thread::setup_ssl` 方法给该 `acl::socket_stream` TCP 流对象绑定一个 SSL IO 对象，即：先通过调用 `acl::mbedtls_conf::open` 方法创建一个 `acl::mbedtls_io` SSL IO 对象，然后通过 `acl::socket_stream` 的基类中的方法 `set_hook` 将该 SSL IO 对象与 TCP 流对象进行绑定并完成 SSL 握手过程；
   - SSL 握手成功后进入到 `echo_thread::do_echo` 函数中进行简单的 SSL 安全 echo 过程。
  
-## 2.2、客户端模式（使用 MbedTLS）
+### 2.2、客户端模式（使用 MbedTLS）
 在熟悉了上面的 SSL 服务端编程后，下面给出使用 SSL 进行客户端编程的示例（该示例位置：https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/client）：
 ```c
 #include <assert.h>
@@ -487,7 +497,7 @@ int main(int argc, char* argv[]) {
 ```
 在客户方式下使用 SSL 时的方法与服务端时相似，不同之处是在客户端下使用 SSL 时不必加载证书和设置私钥。
 
-## 2.3、非阻塞模式
+### 2.3、非阻塞模式
 在使用 SSL 进行非阻塞编程时，动态库的加载、证书的加载及设置私钥过程与阻塞式 SSL 编程方法相同，不同之处在于创建 SSL IO 对象时需要设置为非阻塞方式，另外在 SSL 握手阶段需要不断检测 SSL 握手是否成功，下面只给出相关不同之处，完整示例可以参考：https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/aio_server，https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/aio_client）：
 
 - 调用 `acl::sslbase_conf` 中的虚方法 `open` 时传入的参数为 `true` 表明所创建的 SSL IO 对象为非阻塞方式；
