@@ -20,6 +20,8 @@ categories: 协程编程
 * [九、协程共享栈](#九协程共享栈)
 * [十、使第三方网络库协程化](#十使第三方网络库协程化)
 * [十一、Windows 界面编程协程化](#十一Windows界面编程协程化)
+* [十二、打印协程调用栈](#十二打印协程调用栈)
+* [十三、检测协程死锁问题](#十三检测协程死锁问题)
 
 <!-- vim-markdown-toc -->
 
@@ -704,6 +706,87 @@ void start(void) {
 
 相对于栈拷贝时的时间损耗，在使用共享栈方式编程时有一点需要**特别注意：** 创建在栈上的变量不能在协程之间或协程与线程之间共享，即是说，一个协程 F1 中的变量 A 传递给另一个协程 F2，并等待 F2 处理后返回，此时的 A 变量不能被创建在 F1 的栈上，因为运行栈在由 F1 切换到 F2 时，变量 A 的地址空间“暂时消失了”，此时变成了 F2 的栈空间，如果该变量在 F2 中继续被使用的话，就会存在地址非法使用的问题；解决变量在协程间共享的方法是将变量创建在堆上（即用 malloc 或 new 创建）。
 
+**注意：** 当前 Acl 协程`共享运行栈`模式仅支持 Unix 平台，即还不支持 Windows 平台。
+
+下面给出一个例子，如果在**非共享运行栈**模式运行是没有问题的，但如果以**共享栈**方式运行则就会出现问题：
+```c++
+#include <acl-lib/acl_cpp/lib_acl.hpp>
+#include <acl-lib/fiber/libfiber.hpp>
+
+class fiber_runner : public acl::fiber {
+public:
+	fiber_runner(acl::fiber_tbox<int>* box) : box_(box) {}
+
+private:
+	~fiber_runner(void) {}
+
+private:
+	acl::fiber_tbox<int>* box_(box);
+
+	// @override
+	void run(void) {
+		int* n = new int;
+		*n = 1000;
+		box_.push(n);
+
+		delete this;
+	}
+};
+
+class fiber_waiter : public acl::fiber {
+public:
+	fiber_waiter(bool share_stack) : share_stack_(share_stack) {}
+
+private:
+	~fiber_waiter(void) {}
+
+private:
+	bool share_stack_;
+
+	// @override
+	void run(void) {
+		acl::fiber_tbox<int> box;  // box 创建在栈上，且在两个协程之间共享
+		acl::fiber* fb = new fiber_runner(&box);
+		fb->start(64000, share_stack_);
+		int * n = box.pop();
+		delete n;
+		delete this;
+	}
+};
+
+int main(void) {
+	bool share_stack = false;
+
+	acl::fiber* fb = new fiber_waiter(share_stack);
+	fb->start(64000, share_stack);
+
+	acl::fiber::schedule();
+	return 0;
+}
+```
+在上面的例子中，`box` 对象在两个协程之间共享使用，因为两个协程以`协程独立栈`方式运行（上面的 share_stack = false），所以不会有问题，但如果将控制参数 `share_stack = true` 则两个协程都运行在 `共享栈` 上，此时就会产生问题：在协程 `fiber_waiter` 中创建协程 `fiber_runner` 并将创建在运行栈上的变量 `box` 传递给 `fiber_runner` 对象后，调用 `box.pop()`，此时协程 `fiber_waiter` 就会被挂起（其运行栈从共享栈中拷贝并保存起来）并让出 `协程共享运行栈` 给协程 `fiber_runner`，在协程 `fiber_runner` 内部操作由协程 `fiber_waiter` 传递来的变量 `box` 时，创建在`共享运行栈`上的对象 `box` 的地址空间可能已经被协程 `fiber_runner` 的栈数据覆盖了，所以传递到 `fiber_runner` 中的对象 box 的地址上的数据发生了改变（不再是 box 对象了），这时如果再操作 box 对象便是非法了。
+
+要想解决在 `协程共享运行栈` 模式下地址空间覆盖时带来的问题，就需要在协程之间共享的对象创建在堆上，针对上面的例子，可修改成如下方式：
+```c++
+class fiber_waiter : public acl::fiber {
+	//...
+private:
+	// @override
+	void run(void) {
+		// 在两个协程之间共享的对象需要创建在堆上
+		acl::fiber_tbox<int>* box = new acl::fiber_tbox<int>;
+		acl::fiber* fb = new fiber_runner(box);
+		fb->start(64000, share_stack_);
+		int *n = box->pop();
+		delete n;
+		delete box;
+		delete this;
+	}
+};
+```
+
+针对上面的例子，如果协程`fiber_waiter`以独立栈方式运行，而协程`fiber_runner`以共享栈方式运行时，box 对象能否创建栈上呢？答案是肯定的，因为当协程`fiber_waiter`被挂起时，其栈空间依然保留不会被其它协程占用，所以在其栈创建的对象的地址上的数据不会被覆盖。
+
 ## 十、使第三方网络库协程化
 通常网络通信库都是阻塞式的，因为非阻塞式的通信库的通用性不高（使用各自封装的事件引擎，很难达到应用层的使用一致性），如果把这些第三方通信库（如：mysql 客户端库，Acl 中的 Redis 库等）使用协程所提供的 IO 及网络  API 重写一遍则工作量太大，不太现实，所以在 Acl 协程库中通过 Hook 系统 API，使阻塞式网络通信库协程化变得简单。所谓网络库协程化就是使这些网络库可以应用在协程环境中，从而可以很容易编写出支持高并发的网络程序。
 
@@ -912,3 +995,217 @@ private:
 
 通过以上步骤就可为 win32 界面程序添加基于协程模式的通信模块，上面的两个协程类的处理过程都是“死循环”的，而且又与界面过程同处同一线程运行空间，却为何却不会阻塞界面消息过程呢？其原因就是当通信协程类对象在遇到网络 IO 阻塞时，会自动将自己挂起，将线程的运行权交给其它协程或界面过程。原理就是这么简单，但内部实现还有点复杂度的，感兴趣的可以看看 Acl 协程库的实现源码(https://github.com/acl-dev/acl/tree/master/lib_fiber/ )。
 此外，上面示例的完整代码请参考：https://github.com/acl-dev/acl/tree/master/lib_fiber/samples/WinEchod  。
+
+## 十二、打印协程调用栈
+当一个协程因为网络阻塞、加锁等待等原因被挂起时，有时需要打印该协程的函数调用栈以方便调试；因为协程的运行栈是我们通过分配一段动态内存模拟的运行栈，同时又因为协程又不是操作系统的调度单元，所以我们无法通过 GDB 来检查协程栈。Acl 协程目前通过结合 libunwind 库支持打印正在运行或被挂起的协程的调用栈，虽然仅支持 Linux 平台下的特定上下文切换方式（仅支持 swapcontext 上下文切换方式），但对于协程调试帮助很大。下面给出打印协程栈的过程：
+- 重新设置编译条件：打开 lib_fiber/c/Makefile 文件，将上下文切换方式由 `JMP_CTX = USE_JMP_DEF` 修改为 `JMP_CTX = USE_CONTEXT`，即将协程的上下文切换方式改成 `swapcontext`; 给编译选项 `CFLAGS` 增加条件编译，即 `CFLAGS += -DDEBUG_STACK`；然后重新编译 libfiber.a 库；
+- 在协程代码中通过静态方法 `acl::fiber::stacktrace` 获取指定协程的函数调用栈；
+- 在可执行程序的 Makefile 里进行程序连接时，需要添加 libunwind 相关库，即：`-lunwind -lunwind-x86_64`;
+- 编译可执行程序，便可以自行打印被挂起协程的调用栈了。
+
+下面给出一个程序例子：
+```c++
+#include <acl-lib/acl_cpp/lib_acl.hpp>
+#include <acl-lib/fiber/libfiber.hpp>
+
+class myfiber : public acl::fiber {
+public:
+	myfiber(acl::fiber_tbox<bool>& box) : box_(box) {}
+	~myfiber(void) {}
+
+private:
+	acl::fiber_tbox<bool>& box_;
+
+	// @override
+	void run(void) {
+		func1();
+	}
+	void func1(void) {
+		func2();
+	}
+	void func3(void) {
+		// 等待消息，在获得消息后退出
+		box_.pop();
+	}
+};
+
+class checker : public acl::fiber {
+public:
+	checker(acl::fiber_tbox<bool>& box, acl::fiber& fb)
+	: box_(box), fiber_(fb) {}
+	~checker(void) {}
+
+private:
+	acl::fiber_tbox<bool>& box_;
+	acl::fiber& fiber_;
+
+	// @override
+	void run(void) {
+		std::vector<acl::fiber_frame> stack;
+		// 获得指定协程的调用栈
+		acl::fiber::stacktrace(fiber_, stack, 50);
+		// 打印指定协程的函数调用栈
+		for (std::vector<acl::fiber_frame>::const_iterator
+			 cit = stack.begin(); cit != stack.end(); ++cit) {
+
+			printf("0x%lx(%s)+0x%lx\r\n",
+				(*cit).pc, (*cit).func.c_str(), (*cit).off);
+		}
+
+		// 通过等待消息的协程退出
+		box_.push(NULL);
+	}
+}
+
+int main(void) {
+	acl::fiber_tbox<bool> box;
+	acl::fiber* fb1 = new myfiber(box);
+	fb1->start();
+
+	acl::fiber* fb2 = new checker(box, *fb1);
+	fb2->start();
+
+	acl::fiber::schedule();
+
+	delete fb2;
+	delete fb1;
+
+	return 0;
+}
+```
+在上面的示例中，执行过程如下：
+- 先创建 `myfiber` 协程实例，然后阻塞在 `fiber_tbox` 上等待消息通知；
+- 再创建一个 `checker` 协程实例，运行后获得并打印前面所创建 `myfiber` 协程的调用栈；
+- `checker` 协程最后给 `fiber_tbox` 发消息通知 `myfiber` 协程返回后退出。
+
+编译运行上面示例，便可以得到如下结果：
+```
+0x434b0d(acl_fiber_cond_timedwait)+0x22d
+0x405c85(_ZN3acl10fiber_cond4waitERNS_11fiber_mutexEi)+0x25
+0x403a50(_ZN3acl10fiber_tboxIbE3popEiPb)+0x9e
+0x40378d(_ZN7myfiber5func3Ev)+0x35
+0x403756(_ZN7myfiber5func2Ev)+0x18
+0x40373c(_ZN7myfiber5func1Ev)+0x18
+0x4036ff(_ZN7myfiber3runEv)+0x3f
+0x427bb1(fiber_start)+0x11
+0x2b7cadaad0d0(__correctly_grouped_prefixwc)+0x160
+```
+可以看出 myfiber 的调用栈为：  
+`run->func1->func2->func3->pop->wait->acl_fiber_cond_timedwait`
+
+结合上面输出的 pc 字段，通过工具 `addr2line` 可以获得具体源码的文件位置，当执行：  
+```
+$addr2line -e fiber_stack 0x434b0d 0x405c85 0x403a50 0x40378d 0x403756 0x40373c 0x4036ff 0x427bb1
+```
+便得到如下信息：
+
+```
+/home/zsx/workspace/github/acl/lib_fiber/c/src/sync/fiber_cond.c:150
+/home/zsx/workspace/github/acl/lib_fiber/cpp/src/fiber_cond.cpp:22
+/usr/include/acl-lib/fiber/fiber_tbox.hpp:148
+/home/zsx/workspace/github/demo/c++/fiber/fiber_stack.cpp:32
+/home/zsx/workspace/github/demo/c++/fiber/fiber_stack.cpp:28
+/home/zsx/workspace/github/demo/c++/fiber/fiber_stack.cpp:24
+/home/zsx/workspace/github/demo/c++/fiber/fiber_stack.cpp:19
+/home/zsx/workspace/github/acl/lib_fiber/c/src/fiber.c:590
+```
+
+## 十三、检测协程死锁问题
+在稍微复杂的协程编程中，经常会使用协程锁对共享的资源进行同步保护，如果使用的互斥锁较多，有可能会形成死锁问题，比如下面的代码：
+```c++
+#include <unistd.h>
+#include <acl-lib/acl_cpp/lib_acl.hpp>
+#include <acl-lib/fiber/libfiber.hpp>
+
+class fiber1 : public acl::fiber {
+public:
+	fiber1(acl::fiber_mutex& lock1, acl::fiber_mutex& lock2)
+	: lock1_(lock1), lock2_(lock2) {}
+	~fiber1(void) {}
+
+private:
+	acl::fiber_mutex& lock1_;
+	acl::fiber_mutex& lock2_;
+
+	// @override
+	void run(void) {
+		lock1_.lock();
+		sleep(1);
+		lock2_.lock();
+	}
+};
+
+class fiber2 : public acl::fiber {
+public:
+	fiber2(acl::fiber_mutex& lock1, acl::fiber_mutex& lock2)
+	: lock1_(lock1), lock2_(lock2) {}
+	~fiber2(void) {}
+
+private:
+	acl::fiber_mutex& lock1_;
+	acl::fiber_mutex& lock2_;
+
+	// @override
+	void run(void) {
+		lock2_.lock();
+		sleep(1);
+		lock1_.lock();
+	}
+};
+
+int main(void) {
+	acl::fiber_mutex lock1, lock2;
+
+	fiber1 fb1(lock1, lock2);
+	fb1.start();
+
+	fiber2 fb2(lock1, lock2);
+	fb2.start();
+
+	acl::fiber::schedule();
+	return 0;
+}
+```
+
+可以看出，上面的例子中出现了死锁问题，我们似乎可以很容易看出并解决掉它，但实际应用中程序逻辑要复杂的多，有时很难找到死锁的位置及原因，给开发应用带来了很大的困扰，为此，在 Acl 协程中给出了死锁检测方法，将发生死锁的协程及锁资源都列出，方便开发者查找死锁原因：
+```c++
+class checker : public acl::fiber {
+public:
+	checker(void) {}
+	~checker(void) {}
+
+private:
+	// @override
+	void run(void) {
+		sleep(2);
+		ACL_FIBER_MUTEX_STATS *stats;
+		stats = acl_fiber_mutex_deadlock();
+		if (stats) {
+			acl_fiber_mutex_stats_show(stats); 
+			acl_fiber_mutex_stats_free(stats);
+		}
+	}
+};
+```
+我们可以创建一个独立的协程定期检测协程锁死锁状态，将这个检测协程放到上面的示例中运行，便会得到如下的死锁信息：
+```
+fiber-1
+    0x42dc1f:(acl_fiber_mutex_lock()+0x1af)
+    0x403fcc:(_ZN3acl11fiber_mutex4lockEv()+0xc)
+    0x403314:(_ZN6fiber13runEv()+0x36)
+    0x420451:(fiber_start()+0x11)
+    0x2ae66d7a10d0:(__correctly_grouped_prefixwc()+0x160)
+Holding mutex=0x6c8040
+Waiting for mutex=0x6c82c0
+-----------------------------------------------
+fiber-2
+    0x42dc1f:(acl_fiber_mutex_lock()+0x1af)
+    0x403fcc:(_ZN3acl11fiber_mutex4lockEv()+0xc)
+    0x4033f2:(_ZN6fiber23runEv()+0x36)
+    0x420451:(fiber_start()+0x11)
+    0x2ae66d7a10d0:(__correctly_grouped_prefixwc()+0x160)
+Holding mutex=0x6c82c0
+Waiting for mutex=0x6c8040
+```
+
+可以看出，协程1拥有锁的地址为 `mutex=0x6c8040`，但在等待锁 `mutex=0x6c82c0`，而协程2恰恰相反，所以这两个协程处于死锁状态。
