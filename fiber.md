@@ -671,6 +671,76 @@ int main(void) {
 ## 八、域名解析
 使用协程方式编写网络通信程序，域名解析是不能绕过的，记得有一个协程库说为了支持域名解析，甚至看了相关实现代码，然后说通过 Hook _poll API 就可以了，实际上这并不是通用的做法，至少在我的环境里通过 Hook _poll API 是没用的，所以最稳妥的做法还是应该将 DNS 查询协议实现了，在 acl 的协程库中，域名解析模块在初期集成了第三方 DNS 库，参见：https://github.com/wahern/dns  ，但因为该第 DNS 库存在很多问题（如：不能跨平台，代码混乱，没处理IO异常等问题），所以最终 acl 协程丢弃该库，自己实现了一套更加方便灵活跨平台的 DNS 协议库。 
 
+下面给出协程下进行域名解析的例子：
+```c++
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <acl-lib/fiber/libfiber.hpp>
+
+class ns_lookup : public acl::fiber {
+public:
+    ns_lookup(const char* name) : name_(name) {}
+
+private:
+    ~ns_lookup(void) {}
+
+private:
+    std::string name_;
+
+    // @override
+    void run(void) {
+        struct hostent *ent = gethostbyname(name_.c_str());
+        if (ent == NULL) {
+            printf("gethostbyname error=%s, name=%s\r\n",
+                hstrerror(h_errno), name_.c_str());
+            delete this;
+            return;
+        }
+
+        printf("h_name=%s, h_length=%d, h_addrtype=%d\r\n",
+            ent->h_name, ent->h_length, ent->h_addrtype);
+        for (int i = 0; ent->h_addr_list[i]; i++) {
+            char *addr = ent->h_addr_list[i];
+            char  ip[64];
+            const char *ptr;
+
+            ptr = inet_ntop(ent->h_addrtype, addr, ip, sizeof(ip));
+            printf(">>>addr: %s\r\n", ptr);
+        }
+
+        delete this;
+    }
+};
+
+int main(void) {
+    const char *name1 = "www.google.com", *name2 = "www.baidu.com",
+               *name3 = "zsx.xsz.zzz";
+
+    acl::fiber* fb = new ns_lookup(name1);
+    fb->start();
+
+    fb = new ns_lookup(name2);
+    fb->start();
+
+    fb = new ns_lookup(name3);
+    fb->start();
+
+    acl::fiber::schedule();
+    return 0;
+}
+```
+上面例子中，在协程 `ns_lookup` 中调用 `gethostbyname` API 进行域名查询与我们平时进行域名解析没有什么不同，在 Acl 协程中 Hook 了 `gethostbyname(_r)` 等域名解析相关 API 并进行了协程化处理，对于用户而言是无感知的。编译运行上面例子，便可得到如下结果：
+```text
+gethostbyname error=No address associated with name, name=zsx.xsz.zzz
+h_name=www.a.shifen.com, h_length=4, h_addrtype=2
+>>>addr: 110.242.68.4
+>>>addr: 110.242.68.3
+h_name=www.google.com, h_length=4, h_addrtype=2
+>>>addr: 199.59.149.210
+```
+
 ## 九、协程共享栈
 Acl 协程是有协程栈的，在网络高并发时具有很高的网络处理能力，但有栈协程在非常大量的并发时势必占用较多的内存，为此在 Acl 协程中增加了对于**共享运行栈**的支持（据说该方式在微信后端服务使用后可以大幅节省内存占用）。
 
@@ -1079,7 +1149,7 @@ int main(void) {
 - `checker` 协程最后给 `fiber_tbox` 发消息通知 `myfiber` 协程返回后退出。
 
 编译运行上面示例，便可以得到如下结果：
-```
+```text
 0x434b0d(acl_fiber_cond_timedwait)+0x22d
 0x405c85(_ZN3acl10fiber_cond4waitERNS_11fiber_mutexEi)+0x25
 0x403a50(_ZN3acl10fiber_tboxIbE3popEiPb)+0x9e
@@ -1094,12 +1164,11 @@ int main(void) {
 `run->func1->func2->func3->pop->wait->acl_fiber_cond_timedwait`
 
 结合上面输出的 pc 字段，通过工具 `addr2line` 可以获得具体源码的文件位置，当执行：  
-```
+```text
 $addr2line -e fiber_stack 0x434b0d 0x405c85 0x403a50 0x40378d 0x403756 0x40373c 0x4036ff 0x427bb1
 ```
 便得到如下信息：
-
-```
+```text
 /home/zsx/workspace/github/acl/lib_fiber/c/src/sync/fiber_cond.c:150
 /home/zsx/workspace/github/acl/lib_fiber/cpp/src/fiber_cond.cpp:22
 /usr/include/acl-lib/fiber/fiber_tbox.hpp:148
@@ -1178,34 +1247,45 @@ private:
 	// @override
 	void run(void) {
 		sleep(2);
-		ACL_FIBER_MUTEX_STATS *stats;
-		stats = acl_fiber_mutex_deadlock();
-		if (stats) {
-			acl_fiber_mutex_stats_show(stats); 
-			acl_fiber_mutex_stats_free(stats);
-		}
+		// 打印死锁信息至标准输出
+		acl::fiber_mutex::deadlock_show();
 	}
 };
 ```
 我们可以创建一个独立的协程定期检测协程锁死锁状态，将这个检测协程放到上面的示例中运行，便会得到如下的死锁信息：
-```
-fiber-1
-    0x42dc1f:(acl_fiber_mutex_lock()+0x1af)
-    0x403fcc:(_ZN3acl11fiber_mutex4lockEv()+0xc)
-    0x403314:(_ZN6fiber13runEv()+0x36)
-    0x420451:(fiber_start()+0x11)
-    0x2ae66d7a10d0:(__correctly_grouped_prefixwc()+0x160)
-Holding mutex=0x6c8040
-Waiting for mutex=0x6c82c0
------------------------------------------------
-fiber-2
-    0x42dc1f:(acl_fiber_mutex_lock()+0x1af)
-    0x403fcc:(_ZN3acl11fiber_mutex4lockEv()+0xc)
-    0x4033f2:(_ZN6fiber23runEv()+0x36)
-    0x420451:(fiber_start()+0x11)
-    0x2ae66d7a10d0:(__correctly_grouped_prefixwc()+0x160)
-Holding mutex=0x6c82c0
-Waiting for mutex=0x6c8040
+```text
+Deadlock happened!
+fiber-1:
+0x42df4f(acl_fiber_mutex_lock)+0x1af
+0x40415c(_ZN3acl11fiber_mutex4lockEv)+0xc
+0x403314(_ZN6fiber13runEv)+0x36
+0x420781(fiber_start)+0x11
+0x2b6143ac30d0(__correctly_grouped_prefixwc)+0x160
+Holding mutex=0x15e3040
+Waiting for mutex=0x15e32c0
+
+fiber-2:
+0x42df4f(acl_fiber_mutex_lock)+0x1af
+0x40415c(_ZN3acl11fiber_mutex4lockEv)+0xc
+0x4033f2(_ZN6fiber23runEv)+0x36
+0x420781(fiber_start)+0x11
+0x2b6143ac30d0(__correctly_grouped_prefixwc)+0x160
+Holding mutex=0x15e32c0
+Waiting for mutex=0x15e3040
 ```
 
-可以看出，协程1拥有锁的地址为 `mutex=0x6c8040`，但在等待锁 `mutex=0x6c82c0`，而协程2恰恰相反，所以这两个协程处于死锁状态。
+可以看出，协程1拥有锁的地址为 `mutex=0x15e3040`，但在等待锁 `mutex=0x15e32c0`，而协程2恰恰相反，所以这两个协程处于死锁状态。
+
+将上面显示栈的 pc 字段使用 addr2line 便可以得到具体的位置：
+```shell
+$addr2line -e fiber_deadlock 0x42df4f 0x40415c 0x403314 0x420781 0x42df4f 0x40415c 0x4033f2 0x420781
+
+/home/zsx/workspace/github/acl/lib_fiber/c/src/sync/fiber_mutex.c:494
+/home/zsx/workspace/github/acl/lib_fiber/cpp/src/fiber_mutex.cpp:28
+/home/zsx/workspace/github/demo/c++/fiber/fiber_deadlock.cpp:21
+/home/zsx/workspace/github/acl/lib_fiber/c/src/fiber.c:590
+/home/zsx/workspace/github/acl/lib_fiber/c/src/sync/fiber_mutex.c:494
+/home/zsx/workspace/github/acl/lib_fiber/cpp/src/fiber_mutex.cpp:28
+/home/zsx/workspace/github/demo/c++/fiber/fiber_deadlock.cpp:39
+/home/zsx/workspace/github/acl/lib_fiber/c/src/fiber.c:590
+```
