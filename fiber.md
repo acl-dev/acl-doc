@@ -186,6 +186,12 @@ int main(void) {
 ```
 这是一个支持回显功能的网络协程服务器（也可以修改成线程模式）。使用协程或线程处理网络通信都可以采用**顺序思维**模式，不必象非阻塞网络编程那样复杂，同时使用协程的最大好处是可以创建大量的协程来处理网络高并发连接，而要创建大量的线程是不现实的（线程数非常多时，会导致操作系统的调度能力下降）。
 
+在上面的示例中，启动协程调度（即调用 `acl::fiber::schedule()`）时，内部事件引擎为默认的内核级事件引擎，该方法有一个缺省的事件类型参数可以由用户修改，可选的事件引擎如下：
+- **acl::FIBER_EVENT_T_KERNEL：** 内核级高效事件引擎，在 Linux 上使用 epoll，FreeBSD/MacOS 上使用 kqueue，Windows 平台上则会使用 IOCP；
+- **acl::FIBER_EVENT_T_SELECT, acl::FIBER_EVENT_T_POLL：** 这两个引擎是跨平台的，基本上所有平台都支持；
+- **acl::FIBER_EVENT_T_WMSG：** 当在 Windows 平台开发界面程序时可以使用该引擎，以使网络过程协程化且与界面操作过程同属一个线程空间中，从而可以轻松在网络 IO 过程中操作界面元素；
+- **acl::FIBER_EVENT_T_IO_URING：** 这是在 Linux 5.1x 内核以上新增加的高效事件引擎 io_uring，与 epoll 仅能支持网络（及管道）IO相比，io_uring 引擎同时支持网络 IO 及文件 IO，实现了真正意义上的 IO 大统一，而且 io_uring 引擎为 IO 完成模型，非常容易与协程模式相结合。
+
 ## 三、编译安装
 在编译前，需要先从 **github**  https://github.com/acl-dev/acl  下载源码，国内用户可以选择从 **gitee**  https://gitee.com/acl-dev/acl  下载源码。
 
