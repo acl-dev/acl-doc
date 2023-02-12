@@ -9,24 +9,27 @@ categories: SSL编程
 
 ## 一、概述  
 
-在 Acl 的网络通信模块中，为了支持安全网络传输，引入了第三方 SSL 库，当前支持 Polarssl 及其升级版 MbedTLS，Acl 库中通过抽象与封装，大大简化了 SSL 的使用过程（现在开源的 SSL 库使用确实太复杂了），以下是在 Acl 库中使用 SSL 的特点：  
-- 为了不给不使用 SSL 功能的用户造成编译上的障碍，Acl 库采用动态加载 SSL 动态库方式，这样在连接时就不必提供 SSL 库（当然，通过设置编译开关，也允许用户采用静态连接 SSL 库的方式）；  
-- 在 Acl 的工程中，仅包含了指定版本的 Polarssl/Mbedtls 头文件（在 acl/include/ 目录下），这些头文件在编译 Acl 的 SSL 模块时会使用到，且不对外暴露，因此使用者需要自行提供对应版本的 SSL 动态二进制库（SSL库的源代码可以去官方 https://tls.mbed.org/ 下载，或者去 https://github.com/acl-dev/third_party 处下载）；
-- 在 Acl SSL 模块中，分为全局配置类和 IO 通信类，配置类对象只需在程序启动时进行创建与初始化，且整个进程中按单例方式使用；IO 通信类对象与每一个 TCP 连接所对应的 socket 进行绑定，TCP 连接建立时进行初始化，进行 SSL 握手并接管 IO 过程；
-- Acl SSL 模块支持服务端及客户端方式，在服务端模块时需要加载数字证书及证书私钥；
-- Acl SSL 模块支持阻塞与非阻塞两种通信方式，阻塞方式还可以用在 Acl 协程通信中；
-- Acl SSL 模块已经应用在 Acl HTTP 通信中，从而方便用户编写支持 HTTPS/Websocket 的客户端或服务端程序；同时，Acl SSL 模块也给 Acl Redis 模块提供了安全通信功能；
-- Acl SSL 模块是线程安全的，虽然官方提供的 Mbedtls 库中增加支持线程安全的编译选项，但其默认情况下却是将此功能关闭的（这真是一个坑人的地方），当你需要打开线程支持功能时还必须得要提供线程锁功能（通过函数回调注册自己的线程锁，好在 Acl 库中有跨平台的线程模块），这应该是 Mbedtls 默认情况下不打开线程支持的原因；
-- 当你使用 Mbedtls 时，建议从 https://github.com/acl-dev/third_party/tree/master/mbedtls-2.7.12 下载 Mbedtls 源码编译，此处的 Mbedtls 与官方的主要区别是：
-  1. 在 config.h 中打开了线程安全的编译选项，同时添加了用于线程安全的互斥锁头文件：threading_alt.h；
-  2. Mbedtls 库编译后生成了三个库文件：libmbedcrypto/libmbedx509/libmbedtls，而原来 Polarssl 只生成一个库文件，所以为了用户使用方便，修改了 libray/CMakeLists.txt 文件，可以将这三个库文件合并成一个；
-  3. 增加了 visualc/VC2012（而官方仅提供了 VS2010），这样在 Windows 平台下可以使用 VS 2012 来编译生成 mbedtls 库。
+在 Acl 的网络通信模块中，为了支持安全网络传输，引入了第三方 SSL 库，当前支持 OpenSSL, PolarSSL 及其升级版 MbedTLS，Acl 库中通过抽象与封装，大大简化了 SSL 的使用过程（现在开源的 SSL 库使用过程确实过于太复杂），以下是在 Acl 库中使用 SSL 的特点：  
+- **动态加载第三方SSL库：** 为了不给非 SSL 用户造成编译上及使用 Acl 库的负担，Acl 库采用动态加载 SSL 动态库方式，这样在编译连接 Acl 库时就不必提供 SSL 库（当然，通过设置编译开关，也允许用户采用静态连接 SSL 库的方式）；  
+- **隐藏 SSL 库对外接口：** 在 Acl 的工程中，仅包含了指定版本的 OpenSSL/Polarssl/Mbedtls 头文件（在 acl/include/ 目录下），这些头文件在编译 Acl 的 SSL 模块时会使用到，且不对外暴露，因此使用者需要自行提供对应版本的 SSL 动态二进制库（SSL库的源代码可以去官方 https://tls.mbed.org/ 下载，或者去 https://github.com/acl-dev/third_party 处下载）；
+- **模块分离原则：** 在 Acl SSL 模块中，分为全局配置类和 IO 通信类，配置类对象只需在程序启动时进行创建与初始化，且整个进程中按单例方式使用；IO 通信类对象与每一个 TCP 连接所对应的 socket 进行绑定，TCP 连接建立时进行初始化，进行 SSL 握手并接管 IO 过程；
+- **支持服务器及客户端模式：** Acl SSL 模块支持服务端及客户端方式，在服务端模块时需要加载数字证书及证书私钥；
+- **通信方式：** Acl SSL 模块支持阻塞与非阻塞两种通信方式，阻塞方式还可以用在 Acl 协程通信中；
+- **多证书与SNI支持：** 服务端支持加载多个 SSL 证书同时可以根据 SNI 标识加载不同域证书进行 SSL 握手及通信；客户端支持设置 SNI 标识与服务端进行 SSL 握手； 
+- **线程安全性：** Acl SSL 模块是线程安全的，虽然官方提供的 Mbedtls 库中增加支持线程安全的编译选项，但其默认情况下却是将此功能关闭的（这真是一个坑人的地方），当你需要打开线程支持功能时还必须得要提供线程锁功能（通过函数回调注册自己的线程锁，好在 Acl 库中有跨平台的线程模块），这应该是 Mbedtls 默认情况下不打开线程支持的原因；
+- **应用场景：** Acl SSL 模块已经应用在 Acl HTTP 通信中，从而方便用户编写支持 HTTPS/Websocket 的客户端或服务端程序；同时，Acl SSL 模块也给 Acl Redis 模块提供了安全通信功能；
+- **SSL下载：**
+  - **下载 MbedTLS：** 当你使用 Mbedtls 时，建议从 https://github.com/acl-dev/third_party/tree/master/mbedtls-2.7.12 下载 Mbedtls 源码编译，此处的 Mbedtls 与官方的主要区别是：
+    - 在 config.h 中打开了线程安全的编译选项，同时添加了用于线程安全的互斥锁头文件：threading_alt.h；
+    - Mbedtls 库编译后生成了三个库文件：libmbedcrypto/libmbedx509/libmbedtls，而原来 Polarssl 只生成一个库文件，所以为了用户使用方便，修改了 libray/CMakeLists.txt 文件，可以将这三个库文件合并成一个；
+    - 增加了 visualc/VC2012（而官方仅提供了 VS2010），这样在 Windows 平台下可以使用 VS 2012 来编译生成 mbedtls 库；
+  - **下载 OpenSSL：** 从 OpenSSL 官方或 https://github.com/acl-dev/third_part/ 下载 OpenSSL 1.1.1q 版本。
  
 ## 二、API 接口说明
 为了支持更加通用的 SSL 接口，在 Acl SSL 模块中定义了两个基础类：`sslbase_conf` 和 `sslbase_io`，其中 `ssbase_conf` 类对象可以用做全局单一实例，`ssbase_io` 类对象用来给每一个 TCP socket 对象提供安全 IO 通信功能。
 
 ### 2.1、sslbase_conf 类
-在 ssbase_conf 类中定义了纯虚方法：`open`，用来创建 SSL IO 通信类对象，在当前所支持 Polarssl 和 MbedTSL 中的配置类中（分别为：`acl::polarssl_conf` 和 `acl::mbedtls_conf`）均实现了该方法。下面是 `open` 方法的具体说明：
+在 ssbase_conf 类中定义了纯虚方法：`open`，用来创建 SSL IO 通信类对象，在当前所支持的 OpenSSL，Polarssl 和 MbedTSL 中的配置类中（分别为：`acl::openssl_conf`，`acl::polarssl_conf` 和 `acl::mbedtls_conf`）均实现了该方法。下面是 `open` 方法的具体说明：
 ```c
 /**
  * 纯虚方法，创建 SSL IO 对象
@@ -37,8 +40,7 @@ virtual sslbase_io* open(bool nblock) = 0;
 ```
 在客户端或服务端创建 SSL IO 对象（即：sslbase_io 对象）时调用，被用来与 TCP socket 进行绑定。下面是绑定过程：
 ```c
-bool bind_ssl_io(acl::socket_stream& conn, acl::sslbase_conf& ssl_conf)
-{
+bool bind_ssl_io(acl::socket_stream& conn, acl::sslbase_conf& ssl_conf) {
 	// 创建一个阻塞式 SSL IO 对象
 	bool non_block = false;
 	acl::sslbase_io* ssl = ssl_conf.open(non_block); 
@@ -54,32 +56,21 @@ bool bind_ssl_io(acl::socket_stream& conn, acl::sslbase_conf& ssl_conf)
 ```
 其中 `acl::sslbase_io` 的父类为 `acl::stream_hook`，在`acl::stream` 流基础类中提供了方法`setup_hook`用来注册外部 IO 过程，其中的参数类型为`stream_hook` ，通过绑定外部 IO 过程，将 SSL IO 过程与 acl 中的流处理 IO 过程进行绑定，从而使 acl 的 IO 流过程具备了 SSL 安全传输能力。 
  
-下面的几个接口用在服务端进行证书及私钥加载过程：
-```c
-/**                                                                    
- * 添加一个服务端/客户端自己的证书，可以多次调用本方法加载多个证书 
- * @param crt_file {const char*} 证书文件全路径，非空 
- * @return {bool} 添加证书是否成功 
- */                                                                    
- virtual bool add_cert(const char* crt_file);
-/**                                                                    
- * 添加服务端/客户端的密钥(每个配置实例只需调用一次本方法) 
+下面的接口用在服务端加载证书及私钥：
+```c++
+/**
+ * 添加一个服务端/客户端自己的证书，可以多次调用本方法加载多个证书
+ * @param crt_file {const char*} 证书文件全路径，非空
  * @param key_file {const char*} 密钥文件全路径，非空
  * @param key_pass {const char*} 密钥文件的密码，没有密钥密码可写 NULL
- * @return {bool} 设置是否成功
+ * @return {bool} 添加证书是否成功
  */
-virtual bool set_key(const char* key_file, const char* key_pass = NULL)；
-
-/**
- * 当为服务端模式时是否启用会话缓存功能，有助于提高 SSL 握手效率
- * @param on {bool} 是否在服务端启用会话缓存方式
- * 注：该函数仅对服务端模式有效
- */
-virtual void enable_cache(bool on)；
+virtual bool add_cert(const char* crt_file, const char* key_file,
+        const char* key_pass = NULL);
 ```
 
 ### 2.2、sslbase_io 类
-`acl::sslbase_io` 类对象与每一个 TCP 连接对象 `acl::socket_stream` 进行绑定，使 `acl::socket_stream` 具备了进行 SSL 安全传输的能力，在 `acl::sslbase_io`类中声明了纯虚方法`handshake`，这使之成为纯虚类；另外，`acl::sslbase_io` 虽然继承于`acl::stream_hook`类，但并没有实现 `acl::stream_hook` 中规定的四个纯虚方法：`open`，`on_close`，`read`，`send`，这几个虚方法也需要 `acl::sslbase_io`的子类来实现，目前`acl::sslbase_io`有两个子类`acl::polarssl_io`及`acl::mbedtls_io` 分别用来支持 Polarssl 及 MbedTLS。
+`acl::sslbase_io` 类对象与每一个 TCP 连接对象 `acl::socket_stream` 进行绑定，使 `acl::socket_stream` 具备了进行 SSL 安全通信的能力，在 `acl::sslbase_io`类中声明了纯虚方法`handshake`，这使之成为纯虚类；另外，`acl::sslbase_io` 虽然继承于`acl::stream_hook`类，但并没有实现 `acl::stream_hook` 中规定的四个纯虚方法：`open`，`on_close`，`read`，`send`，这几个虚方法也需要 `acl::sslbase_io`的子类来实现，目前`acl::sslbase_io`的子类有 `acl::openssl_io`，`acl::polarssl_io`及`acl::mbedtls_io` 分别用来支持 `OpenSSL`，`PolarSSL` 及 `MbedTLS`。
 下面是这几个纯虚方法的声明：
 ```c
 /**
@@ -127,11 +118,11 @@ virtual bool on_close(bool alive) { (void) alive; return true; }
  */
 virtual void destroy(void) {}
 ```
-以上几个虚方法均可以在 `acl::polarssl_io` 及 `acl::mbedtls_io` 中看到被实现。
+以上几个虚方法均可以在 `acl::openssl_io`，`acl::polarssl_io` 及 `acl::mbedtls_io` 中看到被实现。
 
 ## 三、编程示例
-### 2.1、服务器模式（使用 MbedTLS）
-首先给出一个完整的支持 SSL 的服务端例子，该例子使用了 MbedTLS 做为 SSL 库，如果想切换成 Polarssl 也非常简单，方法类似（该示例位置：https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/server）：
+### 2.1、服务器模式（使用 OpenSSL）
+首先给出一个完整的支持 SSL 的服务端例子，该例子使用了 OpenSSL 做为 SSL 库，如果想切换成 MbedTLS 或 Polarssl 也简单，方法类似（该示例位置：https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/server）：
 ```c
 #include <assert.h>
 #include "lib_acl.h"
@@ -234,28 +225,27 @@ static bool ssl_init(const acl::string& ssl_crt, const acl::string& ssl_key,
 static void usage(const char* procname) {
         printf("usage: %s -h [help]\r\n"
                 " -s listen_addr\r\n"
-                " -L ssl_libs_path\r\n"
+                " -L ssl_lib_path\r\n"
+                " -C crypto_lib_path\r\n"
                 " -c ssl_crt\r\n"
                 " -k ssl_key\r\n", procname);
 }
 
 int main(int argc, char* argv[]) {
-        acl::string addr = "0.0.0.0|2443";
+        acl::string addr = "0.0.0.0|1443";
 #if defined(__APPLE__)
-        acl::string ssl_lib = "../libmbedtls_all.dylib";
+        acl::string crypto_lib = "/usr/local/lib/libcrypto.dylib";
+        acl::string ssl_lib = "/usr/local/lib/libssl.dylib";
 #elif defined(__linux__)
-        acl::string ssl_lib = "../libmbedtls_all.so";
-#elif defined(_WIN32) || defined(_WIN64)
-        acl::string ssl_path = "../mbedtls.dll";
-
-        acl::acl_cpp_init();
+        acl::string crypto_lib = "/usr/local/lib64/libcrypto.so";
+        acl::string ssl_lib = "/usr/local/lib64/libssl.so";
 #else
 # error "unknown OS type"
 #endif
         acl::string ssl_crt = "../ssl_crt.pem", ssl_key = "../ssl_key.pem";
 
         int ch;
-        while ((ch = getopt(argc, argv, "hs:L:c:k:")) > 0) {
+        while ((ch = getopt(argc, argv, "hs:L:C:c:k:")) > 0) {
                 switch (ch) {
                 case 'h':
                         usage(argv[0]);
@@ -265,6 +255,9 @@ int main(int argc, char* argv[]) {
                         break;
                 case 'L':
                         ssl_lib = optarg;
+                        break;
+                case 'C':
+                        crypto_lib = optarg;
                         break;
                 case 'c':
                         ssl_crt = optarg;
@@ -279,48 +272,39 @@ int main(int argc, char* argv[]) {
 
         acl::log::stdout_open(true);
         
-        // 设置 MbedTLS 动态库路径
-        const std::vector<acl::string>& libs = ssl_lib.split2(",; \t");
-        if (libs.size() == 1) {
-                acl::mbedtls_conf::set_libpath(libs[0]);
-        } else if (libs.size() == 3) {
-                // libcrypto, libx509, libssl);
-                acl::mbedtls_conf::set_libpath(libs[0], libs[1], libs[2]);
-        } else {
-                printf("invalid ssl_lib=%s\r\n", ssl_lib.c_str());
-                return 1;
-        }
+        // 设置 OpenSSL 动态库路径
+        // libcrypto, libssl);
+        acl::openssl_conf::set_libpath(crypto_lib, ssl_lib);
 
-        // 加载 MbedTLS 动态库
-        if (!acl::mbedtls_conf::load()) {
-                printf("load %s error\r\n", ssl_lib.c_str());
+        // 动态加载 OpenSSL 动态库
+        if (!acl::openssl_conf::load()) {
+                printf("load %s, %s error\r\n", crypto_lib.c_str(), ssl_lib.c_str());
                 return 1;
         }
 
         // 初始化服务端模式下的全局 SSL 配置对象
         bool server_side = true;
 
-        // SSL 证书校验级别
-        acl::mbedtls_verify_t verify_mode = acl::MBEDTLS_VERIFY_NONE;
+        acl::sslbase_conf* ssl_conf = new acl::openssl_conf(server_side);
 
-        acl::mbedtls_conf ssl_conf(server_side, verify_mode);
-
-        if (!ssl_init(ssl_crt, ssl_key, ssl_conf)) {
+        if (!ssl_init(ssl_crt, ssl_key, *ssl_conf)) {
                 printf("ssl_init failed\r\n");
                 return 1;
         }
         
-        start_server(addr, ssl_conf);
+        start_server(addr, *ssl_conf);
+
+        delete ssl_conf;
         return 0;
 }
 ```
 关于该示例有以下几点说明：
-- 该服务端例子使用了 MbedTLS 库；
-- 采用了动态加载 MbedTLS 动态库的方式；
-- 动态加载时需要设置 MbedTLS 动态库的路径，然后再加载，但在设置动态库的路径时却有两种方式，之所以有两种设置 MbedTLS 动态库路径的方法，主要是因为原来的 Polarssl 只生成一个库，而到 MbedTLS 后却生成了三个库：libmbedcrypto，libmbedx509 和 libmbedtls，其中的依赖关系是 libmbedx509 依赖于 libmbedcrypto，libmbedtls 依赖于 libmbedx509 和 libmbedcrypto；但在 Windows 平台上，官方却只提供了生成一个库（将这三个库合并）的工程；因此，在 acl::mbedtls_conf 中在加载动态库时，提供两种方式，一个接口是用来设置三个库的位置并加载，另一个接口用来设置一个统一库的位置度加载；
+- 该服务端例子使用了 OpenSSL 动态库；
+- 采用动态加载 OpenSSL 动态库的方式；
+- 动态加载时需要设置 OpenSSL 动态库的路径，然后再加载；
 - 该例子大体处理流程：
-  - 通过 `acl::mbedtls_conf::set_libpath` 方法设置 MbedTLS 的三个动态库或一个统一的动态库，然后调用 `acl::mbedtls_conf::load` 加载动态库；
-  - 在 `ssl_init` 函数中，调用基类 `acl::sslbase_conf` 中的虚方法 `add_cert` 及 `set_key` 分别用来加载 SSL 数字证书及证书私钥；
+  - 通过 `acl::openssl_conf::set_libpath` 方法设置 OpenSSL 的两个动态库路径，然后调用 `acl::openssl_conf::load` 加载动态库；
+  - 在 `ssl_init` 函数中，调用基类 `acl::sslbase_conf` 中的虚方法 `add_cert` 用来加载 SSL 数字证书及证书私钥；
   - 在 `start_server` 函数中，监听本地服务地址，每接收一个 TCP 连接（对应一个 `acl::socket_stream` 对象）便启动一个线程进行 echo 过程；
   - 在客户端处理线程中，调用 `echo_thread::setup_ssl` 方法给该 `acl::socket_stream` TCP 流对象绑定一个 SSL IO 对象，即：先通过调用 `acl::mbedtls_conf::open` 方法创建一个 `acl::mbedtls_io` SSL IO 对象，然后通过 `acl::socket_stream` 的基类中的方法 `set_hook` 将该 SSL IO 对象与 TCP 流对象进行绑定并完成 SSL 握手过程；
   - SSL 握手成功后进入到 `echo_thread::do_echo` 函数中进行简单的 SSL 安全 echo 过程。
