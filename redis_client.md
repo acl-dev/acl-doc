@@ -12,27 +12,28 @@ categories: redis使用
 ## 二、acl redis 库分类
 根据 redis 的数据结构类型，分成 12 个大类，每个大类提供不同的函数接口，这 12 个 C++ 类展示如下：
 
-- 1、redis_key：redis 所有数据类型的统一键操作类；因为 redis 的数据结构类型都是基本的 KEY-VALUE 类型，其中 VALUE 分为不同的数据结构类型；
-- 2、redis_connectioin：与 redis-server 连接相关的类；
-- 3、redis_server：与 redis-server 服务管理相关的类；
-- 4、redis_string：redis 中用来表示字符串的数据类型；
-- 5、redis_hash：redis 中用来表示哈希表的数据类型；每一个数据对象由 “KEY-域值对集合” 组成，即一个 KEY 对应多个“域值对”，每个“域值对”由一个字段名与字段值组成；
-- 6、redis_list：redis 中用来表示列表的数据类型；
-- 7、redis_set：redis 中用来表示集合的数据类型；
-- 8、redis_zset：redis 中用来表示有序集合的数据类型；
-- 9、redis_pubsub：redis 中用来表示“发布-订阅”的数据类型；
-- 10、redis_hyperloglog：redis 中用来表示 hyperloglog 基数估值算法的数据类型；
-- 11、redis_script：redis 中用来与 lua 脚本进行转换交互的数据类型；
-- 12、redis_transaction：redis 中用以事务方式执行多条 redis 命令的数据类型（注：该事务处理方式与数据库的事务有很大不同，redis 中的事务处理过程没有数据库中的事务回滚机制，仅能保证其中的多条命令都被执行或都不被执行）；
+1. redis_key：redis 所有数据类型的统一键操作类；因为 redis 的数据结构类型都是基本的 KEY-VALUE 类型，其中 VALUE 分为不同的数据结构类型；
+2. redis_connectioin：与 redis-server 连接相关的类；
+3. redis_server：与 redis-server 服务管理相关的类；
+4. redis_string：redis 中用来表示字符串的数据类型；
+5. redis_hash：redis 中用来表示哈希表的数据类型；每一个数据对象由 “KEY-域值对集合” 组成，即一个 KEY 对应多个“域值对”，每个“域值对”由一个字段名与字段值组成；
+6. redis_list：redis 中用来表示列表的数据类型；
+7. redis_set：redis 中用来表示集合的数据类型；
+8. redis_zset：redis 中用来表示有序集合的数据类型；
+9. redis_pubsub：redis 中用来表示“发布-订阅”的数据类型；
+10. redis_hyperloglog：redis 中用来表示 hyperloglog 基数估值算法的数据类型；
+11. redis_stream：redis 中用来处理消息队列的数据类型；
+12. redis_script：redis 中用来与 lua 脚本进行转换交互的数据类型；
+13. redis_transaction：redis 中用以事务方式执行多条 redis 命令的数据类型（注：该事务处理方式与数据库的事务有很大不同，redis 中的事务处理过程没有数据库中的事务回滚机制，仅能保证其中的多条命令都被执行或都不被执行）；
 
 除了以上对应于官方 redis 命令的 12 个类别外，在 acl 库中还提供了另外几个类：
 
-- 13、redis_command：以上 12 个类的基类；
-- 14、redis_client：redis 客户端网络连接类；
-- 15、redis_result：redis 命令结果类；
-- 16、redis_pool：针对以上所有命令支持连接池方式；
-- 17、redis_manager：针对以上所有命令允许与多个 redis-server 服务建立连接池集群（即与每个 redis-server 建立一个连接池）；
-- 18、redis_cluster：支持 redis3.0 集群模式的类。
+14. redis_command：以上 12 个类的基类；
+15. redis_client：redis 客户端网络连接类；
+16. redis_result：redis 命令结果类；
+17. redis_pool：针对以上所有命令支持连接池方式；
+18. redis_manager：针对以上所有命令允许与多个 redis-server 服务建立连接池集群（即与每个 redis-server 建立一个连接池）；
+19. redis_cluster：支持 redis3.0 集群模式的类。
 
 ## 三、acl redis 使用举例
 ### 3.1、下面是一个使用 acl 框架中 redis 客户端库的简单例子：
@@ -42,16 +43,14 @@ categories: redis使用
  * @param conn {acl::redis_client&} redis 连接对象
  * @return {bool} 操作过程是否成功
  */
-bool test_redis_string(acl::redis_client& conn, const char* key)
-{
+bool test_redis_string(acl::redis_client& conn, const char* key) {
 	// 创建 redis string 类型的命令操作类对象，同时将连接类对象与操作类
 	// 对象进行绑定
 	acl::redis_string string_operation(&conn);
 	const char* value = "test_value";
 
 	// 添加 K-V 值至 redis-server 中
-	if (string_operation.set(key, value) == false)
-	{
+	if (string_operation.set(key, value) == false) {
 		const acl::redis_result* res = string_operation.get_result();
 		printf("set key: %s error: %s\r\n",
 			key, res ? res->get_error() : "unknown error");
@@ -64,8 +63,7 @@ bool test_redis_string(acl::redis_client& conn, const char* key)
 
 	// 从 redis-server 中取得对应 key 的值
 	acl::string buf;
-	if (string_operation.get(key, buf) == false)
-	{
+	if (string_operation.get(key, buf) == false) {
 		const acl::redis_result* res = string_operation.get_result();
 		printf("get key: %s error: %s\r\n",
 			key, res ? res->get_error() : "unknown error");
@@ -77,27 +75,24 @@ bool test_redis_string(acl::redis_client& conn, const char* key)
 	// 类对象，同时将 redis 连接对象与之绑定
 	acl::redis_key key_operation;
 	key_operation.set_client(conn);  // 将连接对象与操作对象进行绑定
-	if (key_operation.exists(key) == false)
-	{
-		if (conn.eof())
-		{
+	if (key_operation.exists(key) == false) {
+		if (conn.eof()) {
 			printf("disconnected from redis-server\r\n");
 			return false;
 		}
 
 		printf("key: %s not exists\r\n", key);
-	}
-	else
+	} else {
 		printf("key: %s exists\r\n", key);
+	}
 
 	// 删除指定 key 的字符串类对象
-	if (key_operation.del(key, NULL) < 0)
-	{
+	if (key_operation.del(key, NULL) < 0) {
 		printf("del key: %s error\r\n", key);
 		return false;
-	}
-	else
+	} else {
 		printf("del key: %s ok\r\n", key);
+	}
 
 	return true;
 }
@@ -108,8 +103,7 @@ bool test_redis_string(acl::redis_client& conn, const char* key)
  * @param conn_timeout {int} 连接 redis-server 的超时时间(秒)
  * @param rw_timeout {int} 与 redis-server 进行通信的 IO 超时时间(秒)
  */
-bool test_redis(const char* redis_addr, int conn_timeout, int rw_timeout)
-{
+bool test_redis(const char* redis_addr, int conn_timeout, int rw_timeout) {
 	// 创建 redis 客户端网络连接类对象
 	acl::redis_client conn(redis_addr, conn_timeout, rw_timeout);
 	const char* key = "test_key";
@@ -131,16 +125,14 @@ bool test_redis(const char* redis_addr, int conn_timeout, int rw_timeout)
  * @param conn {acl::redis_client&} redis 连接对象
  * @return {bool} 操作过程是否成功
  */
-bool test_redis_string(acl::redis_client& conn, const char* key)
-{
+bool test_redis_string(acl::redis_client& conn, const char* key) {
 	...... // 代码与上述代码相同，省略
 
 	return true;
 }
 
 // 子线程处理类
-class test_thread : public acl::thread
-{
+class test_thread : public acl::thread {
 public:
 	test_thread(acl::redis_pool& pool) : pool_(pool) {}
 
@@ -148,8 +140,8 @@ public:
 
 protected:
 	// 基类（acl::thread）纯虚函数
-	virtual void* run()
-	{
+	// @override
+	void* run() {
 		acl::string key;
 		// 给每个线程一个自己的 key，以便以测试，其中 thread_id()
 		// 函数是基类 acl::thread 的方法，用来获取线程唯一 ID 号
@@ -157,19 +149,16 @@ protected:
 
 		acl::redis_client* conn;
 
-		for (int i = 0; i < 1000; i++)
-		{
+		for (int i = 0; i < 1000; i++) {
 			// 从 redis 客户端连接池中获取一个 redis 连接对象
 			conn = (acl::redis_client*) pool_.peek();
-			if (conn == NULL)
-			{
+			if (conn == NULL) {
 				printf("peek redis connection error\r\n");
 				break;
 			}
 
 			// 进行 redis 客户端命令操作过程
-			if (test_redis_string(*conn) == false)
-			{
+			if (test_redis_string(*conn) == false) {
 				printf("redis operation error\r\n");
 				break;
 			}
@@ -186,8 +175,7 @@ private:
 };
 
 void test_redis_pool(const char* redis_addr, int max_threads,
-	int conn_timeout, int rw_timeout)
-{
+	int conn_timeout, int rw_timeout) {
 	// 创建 redis 连接池对象
 	acl::redis_client_pool pool(redis_addr, max_threads);
 	// 设置连接 redis 的超时时间及 IO 超时时间，单位都是秒
@@ -195,8 +183,7 @@ void test_redis_pool(const char* redis_addr, int max_threads,
 
 	// 创建一组子线程
 	std::vector<test_thread*> threads;
-	for (int i = 0; i < max_threads; i++)
-	{
+	for (int i = 0; i < max_threads; i++) {
 		test_thread* thread = new test_thread(pool);
 		threads.push_back(thread);
 		thread->set_detachable(false);
@@ -205,8 +192,7 @@ void test_redis_pool(const char* redis_addr, int max_threads,
 
 	// 等待所有子线程正常退出
 	std::vector<test_thread*>::iterator it = threads.begin();
-	for (; it != threads.end(); ++it)
-	{
+	for (; it != threads.end(); ++it) {
 		(*it)->wait();
 		delete (*it);
 	}
@@ -221,15 +207,13 @@ void test_redis_pool(const char* redis_addr, int max_threads,
  * @param conn {acl::redis_client&} redis 连接对象
  * @return {bool} 操作过程是否成功
  */
-bool test_redis_string(acl::redis_client& conn, const char* key)
-{
+bool test_redis_string(acl::redis_client& conn, const char* key) {
 	......  // 与上面示例代码相同，略去
 	return true;
 }
 
 // 子线程处理类
-class test_thread : public acl::thread
-{
+class test_thread : public acl::thread {
 public:
 	test_thread(acl::redis_cluster& cluster) : cluster_(cluster) {}
 
@@ -237,26 +221,23 @@ public:
 
 protected:
 	// 基类（acl::thread）纯虚函数
-	virtual void* run()
-	{
+	// @override
+	void* run() {
 		acl::string key;
 		acl::redis_client_pool* pool;
 		acl::redis_client* conn;
 
-		for (int i = 0; i < 1000; i++)
-		{
+		for (int i = 0; i < 1000; i++) {
 			// 从连接池集群管理器中获得一个 redis-server 的连接池对象
 			pool = (acl::redis_client_pool*) cluster_.peek();
-			if (pool == NULL)
-			{
+			if (pool == NULL) {
 				printf("peek connection pool failed\r\n");
 				break;
 			}
 
 			// 从 redis 客户端连接池中获取一个 redis 连接对象
 			conn = (acl::redis_client*) pool_.peek();
-			if (conn == NULL)
-			{
+			if (conn == NULL) {
 				printf("peek redis connection error\r\n");
 				break;
 			}
@@ -265,8 +246,7 @@ protected:
 			// 函数是基类 acl::thread 的方法，用来获取线程唯一 ID 号
 			key.format("test_key: %lu_%d", thread_id(), i);
 			// 进行 redis 客户端命令操作过程
-			if (test_redis_string(*conn, key.c_str()) == false)
-			{
+			if (test_redis_string(*conn, key.c_str()) == false) {
 				printf("redis operation error\r\n");
 				break;
 			}
@@ -283,8 +263,7 @@ private:
 };
 
 void test_redis_manager(const char* redis_addr, int max_threads,
-	int conn_timeout, int rw_timeout)
-{
+	int conn_timeout, int rw_timeout) {
 	// 创建 redis 集群连接池对象
 	acl::redis_client_cluster cluster;
 
@@ -295,8 +274,7 @@ void test_redis_manager(const char* redis_addr, int max_threads,
 
 	// 创建一组子线程
 	std::vector<test_thread*> threads;
-	for (int i = 0; i < max_threads; i++)
-	{
+	for (int i = 0; i < max_threads; i++) {
 		test_thread* thread = new test_thread(cluster);
 		threads.push_back(thread);
 		thread->set_detachable(false);
@@ -305,8 +283,7 @@ void test_redis_manager(const char* redis_addr, int max_threads,
 
 	// 等待所有子线程正常退出
 	std::vector<test_thread*>::iterator it = threads.begin();
-	for (; it != threads.end(); ++it)
-	{
+	for (; it != threads.end(); ++it) {
 		(*it)->wait();
 		delete (*it);
 	}
@@ -323,8 +300,7 @@ void test_redis_manager(const char* redis_addr, int max_threads,
 static acl::string __keypre("test_key_cluster");
 
 // 测试 redis 字符串添加功能
-static bool test_redis_string(acl::redis_string& cmd, int i)
-{
+static bool test_redis_string(acl::redis_string& cmd, int i) {
 	acl::string key;
 	key.format("%s_%d", __keypre.c_str(), i);
 
@@ -333,59 +309,57 @@ static bool test_redis_string(acl::redis_string& cmd, int i)
 	
 	bool ret = cmd.set(key.c_str(), value.c_str());
 	return ret;
-	if (i < 10)
+	if (i < 10) {
 		printf("set key: %s, value: %s %s\r\n", key.c_str(),
 			value.c_str(), ret ? "ok" : "error");
+	}
 	return ret;
 }
 
 // 测试 redis 键是否存在功能
-static bool test_redis_exists(acl::redis_key& cmd, int i)
-{
+static bool test_redis_exists(acl::redis_key& cmd, int i) {
 	acl::string key;
 
 	key.format("%s_%d", __keypre.c_str(), i);
 
-	if (cmd.exists(key.c_str()) == false)
-	{
-		if (i < 10)
+	if (cmd.exists(key.c_str()) == false) {
+		if (i < 10) {
 			printf("no exists key: %s\r\n", key.c_str());
-	}
-	else
-	{
-		if (i < 10)
+		}
+	} else {
+		if (i < 10) {
 			printf("exists key: %s\r\n", key.c_str());
+		}
 	}
 	return true;
 }
 
 // 子线程处理类
-class test_thread : public acl::thread
-{
+class test_thread : public acl::thread {
 public:
-	test_thread(acl::redis_cluster& cluster, int max_conns)
-	: cluster_(cluster), max_conns_(max_conns) {}
+	test_thread(acl::redis_cluster& cluster) : cluster_(cluster) {}
 
 	~test_thread() {}
 
 protected:
 	// 基类（acl::thread）纯虚函数
-	virtual void* run()
-	{
+	// @override
+	void* run() {
 		acl::redis_string cmd_string;
 		acl::redis_key  cmd_key;
 		
 		// 设置 redis 客户端命令的集群操作模式
-		cmd_key.set_cluster(&cluster_, max_conns_);
-		cmd_string.set_cluster(&cluster_, max_conns_);
-		for (int i = 0; i < 1000; i++)
-		{
+		cmd_key.set_cluster(&cluster_);
+		cmd_string.set_cluster(&cluster_);
+		for (int i = 0; i < 1000; i++) {
 			// 进行 redis 客户端命令操作过程
-			if (test_redis_string(cmd_string, i) == false)
+			if (test_redis_string(cmd_string, i) == false) {
 				break;
+			}
 	
-			if (test_redis_exists(cmd_key, i) == false)
+			if (test_redis_exists(cmd_key, i) == false) {
 				break;
+			}
 
 			// 重置客户端命令状态
 
@@ -398,11 +372,9 @@ protected:
 
 private:
 	acl::redis_cluster& cluster_;
-	int max_conns_;
 };
 
-void test_redis_cluster(int max_threads int conn_timeout, int rw_timeout)
-{
+void test_redis_cluster(int max_threads int conn_timeout, int rw_timeout) {
 	// 创建 redis 集群连接池对象
 	acl::redis_client_cluster cluster;
 
@@ -416,9 +388,8 @@ void test_redis_cluster(int max_threads int conn_timeout, int rw_timeout)
 
 	// 创建一组子线程
 	std::vector<test_thread*> threads;
-	for (int i = 0; i < max_threads; i++)
-	{
-		test_thread* thread = new test_thread(cluster, max_threads);
+	for (int i = 0; i < max_threads; i++) {
+		test_thread* thread = new test_thread(cluster);
 		threads.push_back(thread);
 		thread->set_detachable(false);
 		thread->start();
@@ -426,8 +397,7 @@ void test_redis_cluster(int max_threads int conn_timeout, int rw_timeout)
 
 	// 等待所有子线程正常退出
 	std::vector<test_thread*>::iterator it = threads.begin();
-	for (; it != threads.end(); ++it)
-	{
+	for (; it != threads.end(); ++it) {
 		(*it)->wait();
 		delete (*it);
 	}
@@ -440,10 +410,41 @@ void test_redis_cluster(int max_threads int conn_timeout, int rw_timeout)
 - 示例3 的客户端必须在开始初始化时添加所有的 redis 服务结点，以便于采用轮循或者哈希访问模式；而示例4 在初始化时只需添加至少一个集群中的服务结点即可，随着访问次数的增加，会根据需要动态添加 redis 服务结点（ redis3.0 采用的重定向机制，即当访问某个 redis 结点时，若 key 值不存在于该结点上，则其会返回给客户端一个重定向指令，告诉客户端存储该 key 的 redis 服务结点，因此，根据此特性，acl redis 集群会根据重定向信息动态添加 redis 集群中的服务结点）；
 - 此外，示例4 是兼容示例3 的。
 
+### 3.5、使用 redis pipeline 方式连接 redis3.0 集群
+
+虽然在 **3.4）** 节中提到的使用 redis 集群的通信方式具有非常高的性能，但 redis-server 支持的 pipeline 模式具有更高的性能，为此 Acl redis client 也增加了以 pipeline 方式访问 redis-server 的模式，若要使用 pipeline 方式，仅需创建 `acl::redis_client_pipeline` 通信对象，并将其传递给 redis 命令对象即可。
+
+下面是创建并启动 redis pipeline 方式的过程：
+```c++
+	const char* redis_addr = "127.0.0.1:6379";
+
+	acl::redis_client_pipeline pipeline(redis_addr);
+	pipeline.start();  // 创建独立线程并启动 pipeline 模式
+```
+redis pipeline 对象传入 redis 命令对象后，就可以使用了，如下：
+```c++
+void test(acl::redis_client_pipeline& pipeline) {
+	acl::redis cmd(&pipeline);
+	...
+	// 或：
+	// acl::redis cmd;
+	// cmd.set_pipeline(&pipeline);
+```
+
+对比以上所有例子可以看出，Acl redis client 这种将命令对象与通信对象分离的设计方式具有很好的灵活性和通用性，每个命令对象只需根据需要设置不同的通信对象后，则后面的操作就完全相同了，这样给初期使用 acl::redis_client_cluster 类对象的用户迁移到使用 acl::redis_client_pipeline 提供了便利。
+
+在实践中相较于 acl::redis_client_cluster 而言，acl::redis_client_pipeline 的优势为：
+- **具有更高的性能：** 在高并发环境中使用 pipeline 方式，性能获得数倍的提升；
+- **更少的连接数：** 在 pipeline 方式下，应用程序与每个 redis-server 节点仅维护一个连接；
+- **redis-server性能更高：** 在 pipeline 方式下，每个 redis-server 的客户端 TCP 连接数更少，通信能力更强，所以 redis-server 的性能也更高。
+
+但 pipeline 方式也有一些局限性，对于一些可能的“持久性”等待类的 redis 命令是不能用 pipeline 方式的，因为在 Acl pipeline 的实现中，与每个 redis-server 节点仅维护一个连接，则如果发送的 redis 命令中存在阻塞式操作，则会挂起该连接，另外该阻塞式命令的响应返回顺序可能与请求的顺序不同，导致无法区分 redis 服务端返回的结果对应哪个请求命令。目前在 Acl redis 库中不能使用 pipeline 的函数有：
+- acl::redis_pubsub: get_message();
+- acl::redis_list: blpop(), brpop(), brpoplpush();
+- acl::redis_stream: xread(), xreadgroup(), xreadgroup_with_noack();
+
 ## 四、小结
 以上介绍了 acl 框架中新增加的 redis 库的使用方法及处理过程，该库将复杂的协议及网络处理过程隐藏在实现内部，使用户使用起来感觉象是在调用本的函数。在示例 2）、3） 中提到了 acl 线程的使用，有关 acl 库中更为详细地使用线程的文章参见：《使用 acl_cpp 库编写多线程程序》。
 
 github：https://github.com/acl-dev/acl
 gitee：https://gitee.com/acl-dev/acl
-
- 
