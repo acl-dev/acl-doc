@@ -522,3 +522,33 @@ bool read_wakeup()
 }
 ```
 在该代码片断中，如果 SSL 握手一直处于进行中，则 `read_wakeup` 可能会被调用多次，这就意味着 `handshake` 握手过程也会被调用多次，然后再通过 `handshake_ok` 判断握手是否已经成功，如果成果，则通过调用 `gets` 方法切换到 IO 过程（该 IO 过程对应的回调为 `read_callback`），否则进行 SSL 握手过程（继续等待 `read_wakeup` 被回调）。
+
+### 2.4、SNI方式支持使用多个证书
+SSL 的早期设计认为一个服务器仅提供一个域名服务，因此只需要加载一个证书即可。但后来因为 HTTP 虚拟主机的产生与发展，只能加载一个 SSL 证书显然是不能满足要求的（服务端与客户端进行 SSL 握手时必须选择合适的域名证书），为此 SSL 协议进行了扩展：在客户端向服务端发起SSL握手阶段便将相应域名信息以明文方式发送至服务端，于时服务器便根据此信息选择相应的 SSL 证书，从而完成了 SSL 过程。在 Acl 的 SSL 模块中也增加了针对 SNI 的支持，从而可以使客户端与服务端进行多域名 SSL 通信。
+更多 SSL SNI 内容可以参考：https://abcdxyzk.github.io/blog/2021/06/08/tools-sni/ .
+
+#### 2.4.1、客户端
+在 `acl::sslbase_io` 基类中提供了设置 SNI 标识的方法，如下：
+```c++
+	/**
+	 * 设置 SNI HOST 字段
+	 * @param host {const char*}
+	 */
+	void set_sni_host(const char* host);
+```
+该方法设置了所请求的域名主机标识（对应 `sslbase_io::sni_host_` 成员变量），在 `acl::sslbase_io` 的子类（目前主要是 `acl::openssl_io` 及 `acl::mbedtls_io`）中，当开始 SSL 会话时会首先检测该成员变量（`sni_host_`）是否已经设置，如果已设置，则会自动在 SSL 握手阶段添加 SNI 扩展标识。
+
+#### 2.4.1、服务端
+Acl SSL 模块在服务端处理 SSL SNI 的方式是自动的，无需应用特殊处理，只需要使用者添加多个不同域名的证书即可，即多次调用下面方法加载多个域名证书（即调用基类 `acl::sslbase_conf` 中的方法）：
+```c++
+	/**
+	 * 添加一个服务端/客户端自己的证书，可以多次调用本方法加载多个证书
+	 * @param crt_file {const char*} 证书文件全路径，非空
+	 * @param key_file {const char*} 密钥文件全路径，非空
+	 * @param key_pass {const char*} 密钥文件的密码，没有密钥密码可写 NULL
+	 * @return {bool} 添加证书是否成功
+	 */
+	virtual bool add_cert(const char* crt_file, const char* key_file,
+		const char* key_pass = NULL);
+```
+使用者每通过 `sslbase_conf::add_cert` 方法添加一个 SSL 证书，内部人自动解析该证书，并提取证书中记录主机 DNS 信息的扩展数据，并添加主机域名与证书的映射关系；启动运行后，当收到客户端带有 SNI 标识的 SSL 握手请求时，会根据主机域名自动去查找匹配相应的 SSL 证书，从而为该次 SSL 会话选择正确的 SSL 证书。
