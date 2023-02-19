@@ -552,3 +552,15 @@ Acl SSL 模块在服务端处理 SSL SNI 的方式是自动的，无需应用特
 		const char* key_pass = NULL);
 ```
 使用者每通过 `sslbase_conf::add_cert` 方法添加一个 SSL 证书，内部人自动解析该证书，并提取证书中记录主机 DNS 信息的扩展数据，并添加主机域名与证书的映射关系；启动运行后，当收到客户端带有 SNI 标识的 SSL 握手请求时，会根据主机域名自动去查找匹配相应的 SSL 证书，从而为该次 SSL 会话选择正确的 SSL 证书。
+
+## 四、Acl 库编译集成第三方 SSL 方式
+Acl 库在缺省情况下自动支持 SSL 通信功能并采用动态加载第三方 SSL（OpenSSL/MbedTLS/PolarSSL） 动态库的方式来集成 SSL 功能，查看 Makefile 文件或 VC 工程可以看到在编译 Acl 库时指定了 HAS_OPENSSL_DLL/HAS_MBEDTLS_DLL/HAS_POLARSSL_DLL 编译选项，这样在 openssl_conf.cpp 等与 SSL 相关的功能模块代码中会根据此编译选项动态加载 SSL 动态库；但有时，有的项目希望可以静态链接 SSL 动态库，则在编译 Acl 项目中就需要指定静态连接编译选项，即（下面以集成 OpenSSL 为例）：
+```shell
+$ cd acl; make OPENSSL_STATIC=yes
+```
+然后在应用程序自身的 Makefile 中指定 SSL 库，如下 ：
+```Makefile
+app:
+        g++ -o app app.o -lacl_cpp -lprotocol -lacl -lcrypto -lssl -lz -lpthread
+```
+
