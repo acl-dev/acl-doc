@@ -18,7 +18,7 @@ categories: 服务编程
 
 ### 2.2、使用 wizard 向导
 运行 `./wizard`，则提示如下：
-```
+```shell
 $./wizard
 select one below:
 m: master_service; d: db; h: http; q: exit
@@ -30,17 +30,17 @@ m: master_service; d: db; h: http; q: exit
   - ‘d' 生成数据库相关程序（未实现）；
   - 'q' 退出 wizard 向导程序。
 - 输入 `h' 表示将要生成 HTTP 服务器程序，提示用户输入将要生成的服务程序名称：
-```
+```shell
 >h
 please input your program name: httpd
 ```
 此处，输入程序名 `httpd`，然后提示如下：
-```
+```shell
 s: http servlet
 >
 ```
 当前，向导程序仅支持生成类似于 Java HttpServlet 类型的服务器程序，此处，我们应输入 `s`，然后提示：
-```
+```shell
 create httpd/Makefile ok.
 create httpd/valgrind.sh ok.
 create httpd/httpd.sln ok.
@@ -63,7 +63,7 @@ create common_files ok!
 Do you want add cookie? [y/n]:
 ```
 上面显示 `wizard` 程序自动生成一些源文件及工程文件，接着提示是否需要支持 `http cookies`，此处我们选择 `n` -- 即不需要。然后提示：
-```
+```shell
 Do you want add cookie? [y/n]: n
 create httpd/http_servlet.cpp ok.
 choose master_service type:
@@ -73,7 +73,7 @@ choose master_service type:
 >
 ```
 此处需要我们选择服务模型类型，此处选择 `f` 表示生成协程服务程序，显示如下：
-```
+```shell
 >f
 create httpd/httpd.cf ok.
 create httpd/Makefile.in ok
@@ -97,7 +97,7 @@ wizard显示生成了一些与协程及http服务相关的源码文件、工程�
 
 ### 2.3、快速浏览向导生成的文件
 进入 `./httpd` 目录，可以看到帮我们生成了以下文件：
-```
+```shell
 -rw-------  1 zsx  staff    151 May 27 10:43 Makefile
 -rw-------  1 zsx  staff   4388 May 27 10:43 Makefile.in
 -rw-------  1 zsx  staff   3612 May 27 10:43 http_service.cpp
@@ -143,11 +143,11 @@ wizard显示生成了一些与协程及http服务相关的源码文件、工程�
 
 ### 2.4、编译测试协程 HTTP 服务器
 在上面用向导程序生成的 `httpd` 目录下运行 `make` 编译服务程序，于是便生成了一个名为 `httpd` 的基于协程服务模型的 http 服务程序。以手工方式启动该 httpd 程序：
-```
+```shell
 ./httpd alone httpd.cf
 ```
 显示如下：
-```
+```shell
 listen: 127.0.0.1|8088
 master_log_open(36): no MASTER_LOG's env value
 src/fiber_server.cpp(1148), acl_fiber_server_main: configure file=httpd.cf
@@ -164,7 +164,7 @@ daemon started, log=acl_master.log, ev=0
 ```
 
 然后我们可以用浏览器或`curl` 工具进行测试：
-```
+```shell
 $ curl http://127.0.0.1:8088/test
 /test/: hello world!, method=1, GET
 
@@ -174,7 +174,7 @@ hello world!
 
 ### 2.5、发布服务程序至acl_master服务管理框架
 向导程序生成安装脚本 `setup.sh` 可用来安装编译好的服务程序，执行如下命令：
-```
+```shell
 #./setup.sh /opt/soft/httpd
 ```
 该脚本自动将 httpd 服务程序安装至 `/opt/soft/httpd/sbin/` 目录下，同时将其配置文件拷贝至 `/opt/soft/httpd/conf` 目录；如果当前环境中安装了 `acl_master` 服务管理框架，安装脚本会将该服务的配置文件全路径 `/opt/soft/httpd/conf/httpd.cf` 添加进 `acl_master` 的服务管理文件 `/opt/soft/acl-master/conf/services.cf` 中，这样当 `acl_master` 程序重启后会自动拉起在 `services.cf` 配置的程序。
