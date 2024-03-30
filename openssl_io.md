@@ -101,4 +101,67 @@ static int ssl3_read_internal(SSL *s, void *buf, size_t len, int peek,
 
 ## 三、解决方案
 
-问题原因分析出来了，但必须得要有解决方案才成，毕竟生产环境中的项目需要等米下锅。
+问题原因分析出来了，但必须得要有解决方案才成，毕竟生产环境中的项目需要等米下锅。首先想到的方案是直接修改 OpenSSL 源码，在 OpenSSL 的 IO 底层解决超时问题，但觉得不太现实，一个是工作量问题，一个是安全性问题，最后一个是兼容性问题（维护一个特有的 OpenSSL 库是很糟糕的），于是快速放弃了该方案。另外还有一个方案，可以尝试使用 setsockopt() 设置 IO 读取超时，Linux平台设置方法如下：
+```c
+struct timeval tm;
+tm.tv_sec  = timeout;
+tm.tv_usec = 0;
+
+// 设置读超时
+setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tm, sizeof(tm));
+
+// 设置写超时
+setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tm, sizeof(tm));
+```
+下面给出一个示例：
+```c
+static void set_timeout(int fd, int rw_timeout) {
+	struct timeval tm;
+	tm.tv_sec  = rw_timeout;
+	tm.tv_usec = 0;
+	if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tm, sizeof(tm)) < 0) {
+		printf("%s: setsockopt error: %s\r\n", __FUNCTION__, strerror(errno));
+	}
+}
+
+void echo_client(int fd, int rw_timeout) {
+	char  buf[8192];
+	int   ret;
+
+	if (rw_timeout > 0) {
+		set_timeout(cstream, rw_timeout);  // 设置读超时
+	}
+
+	while (1) {
+		time_t begin = time(NULL);
+		ret = read(fd, buf, sizeof(buf) - 1);
+		if (ret == 0) {
+			break;
+		}
+
+		if (ret == -1) {}
+			if (errno == EAGAIN) {
+				time_t end = time(NULL);
+				printf("EAGAIN, try again, time cost=%ld\r\n", end - begin);
+				continue;
+			}
+
+			printf("read error: %s\r\n", strerror(errno));
+			break;
+		}
+
+		buf[ret] = 0;
+
+		if (write(fd, buf, ret) != ret) {
+			printf("write error\r\n");
+			break;
+		}
+	}
+
+	close(fd);
+}
+```
+
+在上面例子中，针对 socket 仅需设置一次 IO 超时即可，内核会在读到数据后重新设置超时时间。将上述方法用在 OpenSSL 中就可以解决 IO 读写超时问题，因为 OpenSSL 最终也会调用系统 read API，超时的触发过程是由内核维护的，所以 OpenSSL 每次调用 read 读数据时都会由内核自动设置超时定时器。 在理清解决问题的思路后，将该解决方法用在线上使用 OpenSSL 库的服务项目中，对比观察几日，确认问题已经解决。
+
+此外，因为该服务程序用到了 Acl 的协程框架，而 Acl 协程 Hook 了系统 read/write API，所以也得需要 Hook setsockopt API，并且实现 IO 超时功能，不过此过程不在本次讨论范围，以后有机会再在其它文章介绍。
