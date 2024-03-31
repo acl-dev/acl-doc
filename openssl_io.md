@@ -221,8 +221,12 @@ void ssl_echo(SSL_CTX *ctx, int fd, int rw_timeout) {
 此外，因为该服务程序用到了 Acl 的协程框架，而 Acl 协程 Hook 了系统 read/write API，所以也得需要 Hook setsockopt API，并且实现 IO 超时功能，不过此过程不在本次讨论范围，以后有机会再在其它文章介绍。
 
 ## 四、更多参考
-SSL 线程服务器：https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/server
-SSL 线程客户端：https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/client
 
-SSL 协程服务器：https://github.com/acl-dev/acl/tree/master/lib_fiber/samples/ssl_server
-SSL 协程客户端：https://github.com/acl-dev/acl/tree/master/lib_fiber/samples/ssl_client
+- SSL 线程服务器：https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/server
+- SSL 线程客户端：https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/client
+
+- SSL 协程服务器：https://github.com/acl-dev/acl/tree/master/lib_fiber/samples/ssl_server
+- SSL 协程客户端：https://github.com/acl-dev/acl/tree/master/lib_fiber/samples/ssl_client
+
+- HTTPS 协程服务器：https://github.com/acl-dev/acl/tree/master/lib_fiber/samples/https_server
+- HTTPS 协程客户端：https://github.com/acl-dev/acl/tree/master/lib_fiber/samples/https_client
