@@ -10,13 +10,10 @@
 
 - 分析 Acl 库中 openssl_io.cpp 源码（封装了OpenSSL IO）的 read() 读部分，里面会在调用 SSL_read() 前先调用 acl_read_wait() 检查 socket 是否可读，如果读超时则返回，如果有数据可读才会调用 SSL_read() 读取数据，感觉应该没有问题，于是想借助 ChatGPT 来协助分析问题，下面是 GPT4 给出的解决 SSL 读写超时的方法：
 
-```
-OpenSSL库的IO操作本身并没有内建的超时机制，但你可以通过其它方法实现类似的效果。具体的实现方式会因你使用的环境和代码的结构而异，但以下是一种常见的方法：
-
-将底层的socket设置为非阻塞模式，并且使用系统的函数（如`select()`, `poll()` 或者 `epoll()`）监听这些socket上的事件，并在这些函数中设置超时。
+**OpenSSL库的IO操作本身并没有内建的超时机制，但你可以通过其它方法实现类似的效果。具体的实现方式会因你使用的环境和代码的结构而异，但以下是一种常见的方法：
+将底层的socket设置为非阻塞模式，并且使用系统的函数（如`select()`, `poll()` 或者 `epoll()`）监听这些socket上的事件，并在这些函数中设置超时。**
 
 以下是一个使用`select`的示例：
-```
 
 ```c
 // 假设你已经设置了SSL *ssl和连接的socket fd
@@ -60,9 +57,8 @@ else
 该方法与 Acl 库中先调用 acl_read_wait() 再调用 SSL_read() 的方式相似，另外又对比了网上查询的一些方案，思路也基本类似，
 
 - 显然上面的方式无法在实践中解决 OpenSSL 读导致的 socket 阻塞问题，于是想，如果每次 SSL_read 时函数内部只调用一次 read 的话，上面设置的超时读方法应该是有效的，但如果 SSL_read 内部在某种情况下有多次 read 操作则前面所设置的读等待只对第一次有效，对后面的就无效了；于是又回头仔细查询 SSL_read 的帮助文档，其中有这么一段话：
-```
-If necessary, a read function will negotiate a TLS/SSL session, if not already explicitly performed by SSL_connect(3) or SSL_accept(3). If the peer requests a re-negotiation, it will be performed transparently during the read function operation. The behaviour of the read functions depends on the underlying BIO.
-```
+**If necessary, a read function will negotiate a TLS/SSL session, if not already explicitly performed by SSL_connect(3) or SSL_accept(3). If the peer requests a re-negotiation, it will be performed transparently during the read function operation. The behaviour of the read functions depends on the underlying BIO.**
+
 通过这段话，隐约感觉 SSL_read 内部可能存在多次 read 过程，但上面的话还有点晦涩，接下来只能去看 SSL_read 源码了，从 ssl_lib.c 中找到 SSL_read，其读数据的大体流程为：
 `SSL_read` >> `ssl_read_internal` >> `s->method->ssl_read`，然后再顺藤摸瓜，找到 ssl_read 的具体位置在 s3_lib.c 的 ssl3_read_internal 函数中，如下：
 ```c
@@ -115,53 +111,118 @@ setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tm, sizeof(tm));
 ```
 下面给出一个示例：
 ```c
-static void set_timeout(int fd, int rw_timeout) {
-	struct timeval tm;
-	tm.tv_sec  = rw_timeout;
-	tm.tv_usec = 0;
-	if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tm, sizeof(tm)) < 0) {
-		printf("%s: setsockopt error: %s\r\n", __FUNCTION__, strerror(errno));
-	}
+static int set_timeout(int fd, int rw_timeout) {
+    struct timeval tm;
+    tm.tv_sec  = rw_timeout;
+    tm.tv_usec = 0;
+
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tm, sizeof(tm)) < 0) {
+        printf("%s: setsockopt error: %s\r\n", __FUNCTION__, strerror(errno));
+        return -1;
+    }
+
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tm, sizeof(tm)) < 0) {
+        printf("setsockopt error: %s\r\n", strerror(errno));
+        return -1;
+    }
+
+    return 0;
 }
 
-void echo_client(int fd, int rw_timeout) {
-	char  buf[8192];
-	int   ret;
+// 明文通信方式
+void echo(int fd, int rw_timeout) {
+     // 设置读写超时
+    if (rw_timeout > 0 && set_timeout(fd, rw_timeout) < 0) {
+        return;
+    }
 
-	if (rw_timeout > 0) {
-		set_timeout(cstream, rw_timeout);  // 设置读超时
-	}
+    char  buf[8192];
+    while (1) {
+        time_t begin = time(NULL);
+        int ret = read(fd, buf, sizeof(buf) - 1);
 
-	while (1) {
-		time_t begin = time(NULL);
-		ret = read(fd, buf, sizeof(buf) - 1);
-		if (ret == 0) {
-			break;
-		}
+        if (ret == 0) {
+            break;
+        }
 
-		if (ret == -1) {}
-			if (errno == EAGAIN) {
-				time_t end = time(NULL);
-				printf("EAGAIN, try again, time cost=%ld\r\n", end - begin);
-				continue;
-			}
+        if (ret == -1) {
+            if (errno == EAGAIN) {
+                time_t end = time(NULL);
+                printf("timeout, try again, time cost=%ld\r\n", end - begin);
+            } else {
+                printf("read error: %s\r\n", strerror(errno));
+                break;
+            }
+        }
 
-			printf("read error: %s\r\n", strerror(errno));
-			break;
-		}
+        buf[ret] = 0;
 
-		buf[ret] = 0;
+        if (write(fd, buf, ret) != ret) {
+            printf("write error\r\n");
+            break;
+        }
+    }
 
-		if (write(fd, buf, ret) != ret) {
-			printf("write error\r\n");
-			break;
-		}
-	}
+    close(fd);
+}
 
-	close(fd);
+// SSL 通信方式
+void ssl_echo(SSL_CTX *ctx, int fd, int rw_timeout) {
+     // 设置读写超时
+    if (rw_timeout > 0 && set_timeout(fd, rw_timeout) < 0) {
+        return;
+    }
+
+    SSL* ssl = SSL_new(ctx);
+    if (SSL_set_fd(ssl, fd) != 0) {
+        SSL_free(ssl);
+        return;
+    }
+
+    if (SSL_do_handshake(ssl) != 1) {
+        SSL_free(ssl);
+        return;
+    }
+
+    while (1) {
+        char   buf[8192];
+        time_t begin = time(NULL);
+        int ret = SSL_read(ssl, buf, sizeof(buf) - 1);
+        if (ret == 0) {
+            break;
+        }
+
+        if (ret == -1) {
+            if (errno == EAGAIN) {
+                time_t end = time(NULL);
+                printf("timeout, try again, time cost=%ld\r\n", end - begin);
+            } else {
+                printf("read error: %s\r\n", strerror(errno));
+                break;
+            }
+        }
+
+        buf[ret] = 0;
+
+        if (SSL_write(fd, buf, ret) != ret) {
+            printf("write error\r\n");
+            break;
+        }
+    }
+
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+    close(fd);
 }
 ```
 
-在上面例子中，针对 socket 仅需设置一次 IO 超时即可，内核会在读到数据后重新设置超时时间。将上述方法用在 OpenSSL 中就可以解决 IO 读写超时问题，因为 OpenSSL 最终也会调用系统 read API，超时的触发过程是由内核维护的，所以 OpenSSL 每次调用 read 读数据时都会由内核自动设置超时定时器。 在理清解决问题的思路后，将该解决方法用在线上使用 OpenSSL 库的服务项目中，对比观察几日，确认问题已经解决。
+在上面例子中，明文模式及SSL模式均使用同样的方法设置 socket 的读写超时，针对 socket 仅需设置一次 IO 超时即可，内核会在读到数据后重新设置超时时间。将上述方法用在 OpenSSL 中就可以解决 IO 读写超时问题，因为 OpenSSL 最终也会调用系统 read API，超时的触发过程是由内核维护的，所以 OpenSSL 每次调用 read 读数据时都会由内核自动设置超时定时器。 在理清解决问题的思路后，将该解决方法用在线上使用 OpenSSL 库的服务项目中，对比观察几日，确认问题已经解决。
 
 此外，因为该服务程序用到了 Acl 的协程框架，而 Acl 协程 Hook 了系统 read/write API，所以也得需要 Hook setsockopt API，并且实现 IO 超时功能，不过此过程不在本次讨论范围，以后有机会再在其它文章介绍。
+
+## 四、更多参考
+SSL 线程服务器：https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/server
+SSL 线程客户端：https://github.com/acl-dev/acl/tree/master/lib_acl_cpp/samples/ssl/client
+
+SSL 协程服务器：https://github.com/acl-dev/acl/tree/master/lib_fiber/samples/ssl_server
+SSL 协程客户端：https://github.com/acl-dev/acl/tree/master/lib_fiber/samples/ssl_client
