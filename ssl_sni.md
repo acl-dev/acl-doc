@@ -1,4 +1,11 @@
-# 使用 SSL SNI 预防 SSL 握手攻击
+---
+title: 使用 SSL SNI 拦截 SSL 握手攻击
+date: 2024-06-02 21:34:00
+tags: SSL编程
+categories: SSL编程
+---
+
+# 使用 SSL SNI 拦截 SSL 握手攻击
 
 ## 一、概述
 
