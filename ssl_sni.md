@@ -31,7 +31,7 @@ SNI的作用流程大致如下：
 
 ## 三、实施案例
 
-Acl 库封装的 SSL 模块中提供了通过 SSL SNI 验证客户端身份的能力，下面给出了操作过程：
+Acl 库( https://github.com/acl-dev/acl )封装的 SSL 模块中提供了通过 SSL SNI 验证客户端身份的能力，下面给出了操作过程：
 
 ### 3.1、SSL 服务端
 
@@ -147,6 +147,7 @@ bool ssl_handshake(acl::sslbase_conf& conf, acl::socket_stream& conn) {
 
 ### 3.3、参考
 
+- Acl 库下载: https://github.com/acl-dev/acl/
 - 客户端示例：acl/lib_acl_cpp/samples/ssl/client
 - 服务端示例：acl/lib_acl_cpp/samples/ssl/server
 - 使用SSL中对数据进行加密传输：https://acl-dev.cn/2020/01/15/ssl/
