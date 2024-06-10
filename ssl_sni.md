@@ -97,11 +97,12 @@ public:
 
 SSL 客户端模块与服务端可以协商一个 sni 的生成规则，比如 sni 字符串类似于 `token|host`（比如：xxxxxx|myhost.test.com)，期中 token 字段可以是双方私密生成的加密字符串，host 为主机域名。服务端仅针放行符合加密规则的客户端 SSL 连接，其它连接一概拦截。
 
-#### 3.1.2、创建僵尸 SSL 对象中添加 SNI 验证对象
+#### 3.1.2、创建全局 SSL 配置对象并绑定 SNI 验证对象
 
 下面代码是创建全局的 SSL 配置管理对象代码：
 ```c++
 acl::sslbase_conf* ssl_conf =  new acl::openssl_conf(true);
+// 添加服务端 SSL 证书
 ```
 
 全局 SSL 配置管理对象创建后，添加 SSL SNI 验证对象：
@@ -134,7 +135,7 @@ bool ssl_handshake(acl::sslbase_conf& ssl_conf, acl::socket_stream& conn) {
 
 bool ssl_handshake(acl::sslbase_conf& conf, acl::socket_stream& conn) {
     acl::sslbase_io* ssl = conf.create(false);
-    const char* sni = "crypted_token|mytest.com";
+    const char* sni = "crypted_token|mytest.com";   // 期中的加密token将由服务端验证
     ssl->set_sni_host(sni);  // 设置 SNI 字段
     if (conn.setup_hook(ssl) == ssl) {
         // SSL 握手失败，销毁 SSL IO 对象。
@@ -150,3 +151,4 @@ bool ssl_handshake(acl::sslbase_conf& conf, acl::socket_stream& conn) {
 - 客户端示例：acl/lib_acl_cpp/samples/ssl/client
 - 服务端示例：acl/lib_acl_cpp/samples/ssl/server
 - 使用SSL中对数据进行加密传输：https://acl-dev.cn/2020/01/15/ssl/
+- Acl库下载：https://github.com/acl-dev/acl/
